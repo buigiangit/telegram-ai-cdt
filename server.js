@@ -1272,7 +1272,7 @@ function isBotMentioned(text) {
     lower.includes("thu ky") ||
     lower.includes("thuky") ||
     lower.includes("thư kí") ||
-    lower.includes("thu ki") ||||
+    lower.includes("thu ki") ||
     lower.includes("thu")||
     lower.includes("thư")||
     lower.includes("ki")||
