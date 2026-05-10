@@ -1427,8 +1427,6 @@ app.listen(PORT, () => {
 });
 
 try {
-  await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-
   await bot.launch({
     dropPendingUpdates: true,
     allowedUpdates: ["message"],
