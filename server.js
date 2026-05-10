@@ -45,19 +45,20 @@ let BINANCE_SYMBOL_CACHE_TIME = 0;
 // ================= PROMPT =================
 
 const SYSTEM_PROMPT = `
-Bạn là AI phân tích crypto futures cho cộng đồng FBT.
+Bạn là AI phân tích crypto futures cho cộng đồng CDT.
 
 Vai trò:
-- Là trợ lý phân tích giống một trader thật trong cộng đồng.
-- Nói tự nhiên, gọn, có chất thực chiến.
+- Tên gọi trong group là "Thư Ký".
+- Là em thư ký/trợ lý cộng đồng trader.
+- Nói tự nhiên, nhẹ nhàng, dễ nghe nhưng vẫn thực chiến.
 - Không nói kiểu "là một AI".
 - Không văn mẫu khô cứng.
 
-Phong cách FBT:
-- Trader thực chiến, gọn, chắc, rõ bias.
-- Văn từ mạnh hơn, không vòng vo.
-- Ưu tiên nói thẳng: Long / Short / Chờ, entry, SL, TP.
-- Không lan man.
+Phong cách CDT:
+- Nữ tính, mềm hơn FBT, giống em thư ký cộng đồng trader.
+- Có thể dùng: "em thấy", "mình nên canh", "kèo này chưa nên vội", "canh về entry sẽ đẹp hơn".
+- Không quá gắt, không troll quá đà.
+- Vẫn rõ bias, không lan man.
 - Không học thuật.
 - Không dùng markdown ###.
 - Không đưa cả Long và Short cùng lúc.
@@ -74,13 +75,14 @@ Hệ phân tích chính:
 - Entry/SL/TP ưu tiên theo dữ liệu suggested từ hệ thống.
 
 Cách viết nhận định:
-- Viết như trader thật đang nhắn trong group.
+- Viết như thư ký trader đang nhắn trong group.
+- Câu chữ nhẹ nhàng nhưng không yếu, không mơ hồ.
 - Có thể dùng cụm tự nhiên như:
-  "kèo này không nên đuổi",
-  "bias đang nghiêng Long",
+  "em thấy bias đang nghiêng Long",
+  "mình chưa nên đuổi giá",
+  "kèo này canh về entry sẽ đẹp hơn",
   "OI chưa xấu",
   "funding chưa nóng",
-  "đợi hồi về entry sẽ đẹp hơn",
   "giá đang hơi lưng chừng".
 - Không nhồi quá nhiều thuật ngữ trong một câu.
 - Nhận định chỉ 2-3 câu.
@@ -115,17 +117,18 @@ Nếu Chờ:
 `;
 
 const CHAT_PROMPT = `
-Bạn là trợ lý cộng đồng trader FBT.
+Bạn là Thư Ký, trợ lý cộng đồng trader CDT.
 
 Tính cách:
-- Nói chuyện tự nhiên, thân thiện, thực chiến.
+- Nói chuyện tự nhiên, nhẹ nhàng, nữ tính, gần gũi.
+- Có thể xưng "em" khi phù hợp.
 - Gọi tên người dùng nếu biết tên.
 - Nhớ ngữ cảnh gần nhất, trả lời như đang nói tiếp câu chuyện.
 - Không nói kiểu "là một AI".
 - Không trả lời dài nếu không cần.
 - Nếu câu hỏi mơ hồ, hỏi lại ngắn gọn.
 - Nếu user hỏi về lệnh cũ, dựa vào memory để trả lời tiếp.
-- Nếu user hỏi ngoài trading, trả lời như trợ lý cộng đồng.
+- Nếu user hỏi ngoài trading, trả lời như thư ký cộng đồng.
 
 Giới hạn:
 - Không bịa dữ liệu market nếu không có dữ liệu.
@@ -425,6 +428,7 @@ async function detectSymbol(text, memory = null) {
     "PHAN", "PHÂN", "TICH", "TÍCH", "CO", "CÓ", "DUOC", "ĐƯỢC", "KHONG",
     "KHÔNG", "GIUP", "GIÚP", "XEM", "SCALP", "SCALPING", "SWING", "EMA",
     "SONIC", "FUNDING", "OI", "CALL", "LỆNH", "LENH", "PHÂN", "TÍCH",
+    "THƯ", "KÝ", "THU", "KY", "THUKY", "KI",
   ];
 
   for (const word of words) {
@@ -1162,10 +1166,12 @@ PHÂN TÍCH HỆ THỐNG:
 
 function groupStyleText() {
   return `
-GROUP STYLE: FBT
-- Phong thái trader thực chiến, gọn, chắc, rõ bias.
-- Văn từ mạnh hơn, không vòng vo.
-- Ưu tiên nói thẳng: Long / Short / Chờ, entry, SL, TP.
+GROUP STYLE: CDT
+- Tên gọi trong group là "Thư Ký".
+- Phong thái nữ tính, nhẹ nhàng, như em thư ký cộng đồng trader.
+- Có thể dùng: "em thấy", "mình nên canh", "kèo này chưa nên vội", "canh về entry sẽ đẹp hơn".
+- Văn từ mềm hơn FBT nhưng vẫn thực chiến, không lan man.
+- Không làm mất format call lệnh.
 `;
 }
 
@@ -1176,9 +1182,12 @@ function buildTradePrompt() {
 function buildChatPrompt() {
   return `${CHAT_PROMPT}
 
-Phong thái riêng FBT:
-- Trả lời gọn, vui vừa phải, thực chiến.
-- Không màu mè, không dài dòng.`;
+Phong thái riêng CDT:
+- Tên gọi trong group là "Thư Ký".
+- Khi user gọi "thư ký", hiểu là đang gọi mình.
+- Trả lời như em thư ký cộng đồng: nhẹ nhàng, dễ nghe, gần gũi.
+- Có thể xưng "em" khi phù hợp.
+- Không quá gắt, không troll quá đà.`;
 }
 
 async function askChatGPT(userMessage, symbol, mode, memory) {
@@ -1230,7 +1239,7 @@ ${marketContext}
     max_output_tokens: 420,
   });
 
-  return response.output_text || "Bot chưa phân tích được.";
+  return response.output_text || "Thư Ký chưa phân tích được.";
 }
 
 async function askChatOnly(text, memory) {
@@ -1246,7 +1255,7 @@ ${text}
     max_output_tokens: 120,
   });
 
-  return response.output_text || "Bot chưa trả lời được.";
+  return response.output_text || "Thư Ký chưa trả lời được.";
 }
 
 // ================= TELEGRAM BOT =================
@@ -1258,12 +1267,19 @@ function isAllowedGroup(ctx) {
 
 function isBotMentioned(text) {
   const lower = String(text || "").toLowerCase();
-  return lower.includes("bot");
+  return (
+    lower.includes("thư ký") ||
+    lower.includes("thu ky") ||
+    lower.includes("thuky") ||
+    lower.includes("thư kí") ||
+    lower.includes("thu ki") ||
+    lower.includes("bot")
+  );
 }
 
 bot.start(async (ctx) => {
   if (!isAllowedGroup(ctx)) return;
-  await ctx.reply("FBT Bot Online ✅");
+  await ctx.reply("Thư Ký CDT Online ✅");
 });
 
 bot.command("ping", async (ctx) => {
@@ -1276,7 +1292,7 @@ bot.command("on", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("Bạn không có quyền dùng lệnh này.");
 
   BOT_ENABLED = true;
-  await ctx.reply("Bot đã bật ✅");
+  await ctx.reply("Thư Ký đã bật ✅");
 });
 
 bot.command("off", async (ctx) => {
@@ -1284,7 +1300,7 @@ bot.command("off", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("Bạn không có quyền dùng lệnh này.");
 
   BOT_ENABLED = false;
-  await ctx.reply("Bot đã tắt trả lời phân tích ⛔");
+  await ctx.reply("Thư Ký đã tắt trả lời phân tích ⛔");
 });
 
 bot.command("ai_on", async (ctx) => {
@@ -1316,8 +1332,8 @@ bot.command("status", async (ctx) => {
   if (!isAllowedGroup(ctx)) return;
 
   await ctx.reply(
-    `Bot: FBT\n` +
-      `Name: bot\n` +
+    `Bot: CDT\n` +
+      `Name: Thư Ký\n` +
       `Group ID: ${ctx.chat?.id}\n` +
       `Bot status: ${BOT_ENABLED ? "ON ✅" : "OFF ⛔"}\n` +
       `AI chat ngoài market: ${AI_CHAT_ENABLED ? "ON ✅" : "OFF ⛔"}\n` +
@@ -1379,15 +1395,15 @@ bot.on("text", async (ctx) => {
       reply_to_message_id: ctx.message.message_id,
     });
   } catch (error) {
-    console.error("FBT_BOT_ERROR:", error);
-    await ctx.reply("⚠️ Bot đang bận hoặc market API timeout.");
+    console.error("CDT_BOT_ERROR:", error);
+    await ctx.reply("⚠️ Thư Ký đang bận hoặc market API timeout.");
   }
 });
 
 // ================= EXPRESS =================
 
 app.get("/", (_req, res) => {
-  res.send("FBT AI Market Bot Running");
+  res.send("CDT Thư Ký AI Market Bot Running");
 });
 
 app.get("/health", (_req, res) => {
@@ -1418,9 +1434,9 @@ try {
     allowedUpdates: ["message"],
   });
 
-  console.log("FBT bot launched ✅");
+  console.log("CDT Thư Ký bot launched ✅");
 } catch (err) {
-  console.error("FBT_BOT_LAUNCH_ERROR:", err);
+  console.error("CDT_BOT_LAUNCH_ERROR:", err);
 }
 
 process.once("SIGINT", () => {
