@@ -1238,7 +1238,7 @@ ${groupStyleText()}
 
 ${marketContext}
 `,
-    max_output_tokens: 420,
+    max_output_tokens: 1420,
   });
 
   return response.output_text || "Thư Ký chưa phân tích được.";
@@ -1254,7 +1254,7 @@ ${memoryText(memory)}
 User hỏi:
 ${text}
 `,
-    max_output_tokens: 120,
+    max_output_tokens: 2000,
   });
 
   return response.output_text || "Thư Ký chưa trả lời được.";
