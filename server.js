@@ -403,7 +403,7 @@ async function detectSymbol(text, memory = null) {
   const upper = String(text).toUpperCase();
 
   const specialMap = [
-    { keywords: ["XAU", "XAUT", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSDT" },
+    { keywords: ["XAU", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSD" },
     { keywords: ["OIL", "DAU", "DẦU", "WTI", "USOIL"], symbol: "USOIL" },
   ];
 
@@ -453,9 +453,10 @@ async function detectSymbol(text, memory = null) {
 // ================= MARKET DATA =================
 
 async function getBinanceKlines(symbol, interval = "1h", limit = 800) {
-  const isFuturesOnly = ["XAUUSDT"].includes(symbol);
+  const futuresSymbols = ["XAUUSDT"];
+  const isFutures = futuresSymbols.includes(symbol);
 
-  const baseUrl = isFuturesOnly
+  const baseUrl = isFutures
     ? "https://fapi.binance.com/fapi/v1/klines"
     : "https://api.binance.com/api/v3/klines";
 
@@ -465,6 +466,7 @@ async function getBinanceKlines(symbol, interval = "1h", limit = 800) {
   const data = await res.json();
 
   if (!Array.isArray(data)) {
+    console.error("KLINE_API_ERROR:", symbol, data);
     throw new Error(`Không lấy được dữ liệu ${symbol}`);
   }
 
