@@ -1312,6 +1312,8 @@ function isBotMentioned(text) {
     lower.includes("thuky") ||
     lower.includes("thư kí") ||
     lower.includes("thu ki") ||
+    lower.includes("thư") ||
+    lower.includes("thu") ||
     lower.includes("bot")
   );
 }
