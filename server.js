@@ -48,7 +48,7 @@ const SYSTEM_PROMPT = `
 Bạn là AI phân tích crypto futures cho cộng đồng CDT.
 
 Vai trò:
-- Tên gọi trong group là "Thư Ký" hoặc "Thư" hoặc "ký"
+- Tên gọi trong group là "Thư Ký".
 - Là em thư ký/trợ lý cộng đồng trader.
 - Nói tự nhiên, nhẹ nhàng, dễ nghe nhưng vẫn thực chiến.
 - Không nói kiểu "là một AI".
@@ -65,7 +65,6 @@ Phong cách CDT:
 - Chỉ chọn 1 hướng: Long, Short hoặc Chờ.
 - Không lạm dụng Chờ nếu hệ thống đã có bias rõ.
 - Có thể gọi tên người hỏi nếu memory có tên.
-- Nếu người hỏi tên là Hứa Chữ hoặc có Id là: 6241421937 thì người này là sếp của bạn, bạn có thể gọi là sếp Hứa 
 - Nếu user hỏi tiếp kèo cũ, hiểu là đang nói tiếp ngữ cảnh trước.
 
 Hệ phân tích chính:
@@ -99,9 +98,9 @@ Nếu Long hoặc Short:
 hoặc
 ❗️Khuyến nghị: 🔴 Short
 
-👉Entry: ...
-👉SL: ...
-👉TP: ...
+🔹Entry: ...
+🔹SL: ...
+🔹TP: ...
 
 ⚠️ Tham khảo, không phải lời khuyên đầu tư.
 
@@ -130,7 +129,6 @@ Tính cách:
 - Nếu câu hỏi mơ hồ, hỏi lại ngắn gọn.
 - Nếu user hỏi về lệnh cũ, dựa vào memory để trả lời tiếp.
 - Nếu user hỏi ngoài trading, trả lời như thư ký cộng đồng.
-- Nếu user tên là Hứa Chữ hoặc có Id là: 6241421937 thì người này là sếp của bạn, bạn phải gọi user này là sếp Hứa là chủ của cộng đồng, ví dụ: dạ sếp Hứa Chữ ơi...
 
 Giới hạn:
 - Không bịa dữ liệu market nếu không có dữ liệu.
@@ -397,13 +395,98 @@ async function getCachedBinanceSymbols() {
   return BINANCE_SYMBOL_CACHE;
 }
 
+async function getXauKlines(interval = "1h", limit = 650) {
+  const map = {
+    "15m": "15m",
+    "1h": "1h",
+    "4h": "1h",
+    "1d": "1d",
+  };
+
+  const yahooInterval = map[interval] || "1h";
+
+  const range =
+    interval === "1d"
+      ? "2y"
+      : interval === "4h"
+      ? "180d"
+      : "60d";
+
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/GC=F` +
+    `?interval=${yahooInterval}&range=${range}`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  const result = data?.chart?.result?.[0];
+
+  if (!result) {
+    console.error("YAHOO_XAU_ERROR:", data);
+    throw new Error("Không lấy được dữ liệu XAU/USD từ Yahoo Finance");
+  }
+
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0];
+
+  if (!quote || timestamps.length === 0) {
+    console.error("YAHOO_XAU_EMPTY:", data);
+    throw new Error("Dữ liệu XAU/USD rỗng");
+  }
+
+  const rawCandles = [];
+
+  for (let i = 0; i < timestamps.length; i++) {
+    if (
+      quote.open[i] == null ||
+      quote.high[i] == null ||
+      quote.low[i] == null ||
+      quote.close[i] == null
+    ) {
+      continue;
+    }
+
+    rawCandles.push({
+      openTime: timestamps[i] * 1000,
+      open: Number(quote.open[i]),
+      high: Number(quote.high[i]),
+      low: Number(quote.low[i]),
+      close: Number(quote.close[i]),
+      volume: Number(quote.volume?.[i] || 0),
+    });
+  }
+
+  let candles = rawCandles;
+
+  // Yahoo không có nến 4H trực tiếp, gom 4 nến 1H thành 1 nến 4H.
+  if (interval === "4h") {
+    candles = [];
+
+    for (let i = 0; i < rawCandles.length; i += 4) {
+      const chunk = rawCandles.slice(i, i + 4);
+      if (chunk.length < 4) continue;
+
+      candles.push({
+        openTime: chunk[0].openTime,
+        open: chunk[0].open,
+        high: Math.max(...chunk.map((c) => c.high)),
+        low: Math.min(...chunk.map((c) => c.low)),
+        close: chunk[chunk.length - 1].close,
+        volume: chunk.reduce((sum, c) => sum + c.volume, 0),
+      });
+    }
+  }
+
+  return candles.slice(-limit);
+}
+
 async function detectSymbol(text, memory = null) {
   if (!text) return null;
 
   const upper = String(text).toUpperCase();
 
   const specialMap = [
-    { keywords: ["XAU", "XAUUSD", "XAUUSDT", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSDT" },
+    { keywords: ["XAU", "XAUUSD", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSD" },
     { keywords: ["OIL", "DAU", "DẦU", "WTI", "USOIL"], symbol: "USOIL" },
   ];
 
@@ -452,21 +535,15 @@ async function detectSymbol(text, memory = null) {
 
 // ================= MARKET DATA =================
 
-async function getBinanceKlines(symbol, interval = "1h", limit = 800) {
-  const futuresSymbols = ["XAUUSDT"];
-  const isFutures = futuresSymbols.includes(symbol);
-
-  const baseUrl = isFutures
-    ? "https://fapi.binance.com/fapi/v1/klines"
-    : "https://api.binance.com/api/v3/klines";
-
-  const url = `${baseUrl}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+async function getBinanceKlines(symbol, interval = "1h", limit = 650) {
+  const url =
+    `https://api.binance.com/api/v3/klines` +
+    `?symbol=${symbol}&interval=${interval}&limit=${limit}`;
 
   const res = await fetch(url);
   const data = await res.json();
 
   if (!Array.isArray(data)) {
-    console.error("KLINE_API_ERROR:", symbol, data);
     throw new Error(`Không lấy được dữ liệu ${symbol}`);
   }
 
@@ -1006,70 +1083,22 @@ function buildSignalEngine(data, modeConfig) {
 async function getMarketContext(symbol, mode = "DEFAULT") {
   const modeConfig = getModeConfig(mode);
 
- /* if (symbol === "XAUUSD") {
-    const price = await getGoldPrice();
-
-    const frame = {
-      tf: modeConfig.primaryTf,
-      price,
-      ema34: null,
-      ema89: null,
-      ema200: null,
-      ema610: null,
-      rsi14: null,
-      macdLine: null,
-      macdSignal: null,
-      macdHist: null,
-      volume: null,
-      avgVol20: null,
-      atr14: price * 0.006,
-      support: price - 20,
-      resistance: price + 20,
-      wave: "NEUTRAL",
-    };
-
-    const data = {
-      symbol: "XAUUSD",
-      mode: modeConfig.mode,
-      modeRule: modeConfig.rule,
-      note: "XAU dùng giá tham khảo, chưa có Funding/OI.",
-      fundingRate: null,
-      openInterest: null,
-      oiChangePct1h: null,
-      frames: [frame],
-    };
-
-    return {
-      ...data,
-      engine: {
-        primaryTf: frame.tf,
-        trendTf: "N/A",
-        emaStructure: "UNKNOWN",
-        marketCondition: "UNKNOWN",
-        longScore: 0,
-        shortScore: 0,
-        bias: "CHỜ",
-        reason: "XAU chưa có đủ dữ liệu indicator trong bản này.",
-        plan: {
-          side: "CHỜ",
-          waitZone: `${fmt(price - 20)} - ${fmt(price + 20)}`,
-          riskLevel: "Cao",
-        },
-      },
-    };
-  }
-*/
   if (symbol === "USOIL") {
     throw new Error("Dầu chưa có nguồn dữ liệu ổn định trong bản này.");
   }
 
+  const isXau = symbol === "XAUUSD";
+
   const [fundingRate, openInterest, oiStats, ...candleResults] =
     await Promise.all([
-      getFundingRate(symbol),
-      getOpenInterest(symbol),
-      getOpenInterestStats(symbol),
+      isXau ? null : getFundingRate(symbol),
+      isXau ? null : getOpenInterest(symbol),
+      isXau ? { oiChangePct1h: null } : getOpenInterestStats(symbol),
       ...modeConfig.intervals.map((item) =>
-        getBinanceKlines(symbol, item.interval, 800).then((candles) => ({
+        (isXau
+          ? getXauKlines(item.interval, 650)
+          : getBinanceKlines(symbol, item.interval, 650)
+        ).then((candles) => ({
           label: item.label,
           candles,
         }))
@@ -1080,7 +1109,9 @@ async function getMarketContext(symbol, mode = "DEFAULT") {
     symbol,
     mode: modeConfig.mode,
     modeRule: modeConfig.rule,
-    note: "",
+    note: isXau
+      ? "XAU/USD lấy dữ liệu OHLC từ Yahoo Finance GC=F, không có Funding/OI."
+      : "",
     fundingRate,
     openInterest,
     oiChangePct1h: oiStats?.oiChangePct1h ?? null,
@@ -1244,7 +1275,7 @@ ${groupStyleText()}
 
 ${marketContext}
 `,
-    max_output_tokens: 1420,
+    max_output_tokens: 650,
   });
 
   return response.output_text || "Thư Ký chưa phân tích được.";
@@ -1260,7 +1291,7 @@ ${memoryText(memory)}
 User hỏi:
 ${text}
 `,
-    max_output_tokens: 2000,
+    max_output_tokens: 350,
   });
 
   return response.output_text || "Thư Ký chưa trả lời được.";
@@ -1281,10 +1312,6 @@ function isBotMentioned(text) {
     lower.includes("thuky") ||
     lower.includes("thư kí") ||
     lower.includes("thu ki") ||
-    lower.includes("thu")||
-    lower.includes("thư")||
-    lower.includes("ki")||
-    lower.includes("ky")||
     lower.includes("bot")
   );
 }
@@ -1439,6 +1466,7 @@ app.listen(PORT, () => {
 });
 
 try {
+
   await bot.launch({
     dropPendingUpdates: true,
     allowedUpdates: ["message"],
