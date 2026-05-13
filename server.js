@@ -403,7 +403,7 @@ async function detectSymbol(text, memory = null) {
   const upper = String(text).toUpperCase();
 
   const specialMap = [
-    { keywords: ["XAU", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSD" },
+    { keywords: ["XAU", "XAUT", "GOLD", "VANG", "VÀNG"], symbol: "PAXGUSDT" },
     { keywords: ["OIL", "DAU", "DẦU", "WTI", "USOIL"], symbol: "USOIL" },
   ];
 
@@ -1000,7 +1000,7 @@ function buildSignalEngine(data, modeConfig) {
 async function getMarketContext(symbol, mode = "DEFAULT") {
   const modeConfig = getModeConfig(mode);
 
-  if (symbol === "XAUUSD") {
+ /* if (symbol === "XAUUSD") {
     const price = await getGoldPrice();
 
     const frame = {
@@ -1052,7 +1052,7 @@ async function getMarketContext(symbol, mode = "DEFAULT") {
       },
     };
   }
-
+*/
   if (symbol === "USOIL") {
     throw new Error("Dầu chưa có nguồn dữ liệu ổn định trong bản này.");
   }
