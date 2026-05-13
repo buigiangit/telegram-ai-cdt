@@ -403,7 +403,7 @@ async function detectSymbol(text, memory = null) {
   const upper = String(text).toUpperCase();
 
   const specialMap = [
-    { keywords: ["XAU", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSD" },
+    { keywords: ["XAU", "XAUUSD", "XAUUSDT", "GOLD", "VANG", "VÀNG"], symbol: "XAUUSDT" },
     { keywords: ["OIL", "DAU", "DẦU", "WTI", "USOIL"], symbol: "USOIL" },
   ];
 
