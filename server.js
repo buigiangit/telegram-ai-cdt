@@ -36,7 +36,7 @@ const db = process.env.DATABASE_URL
 let BOT_ENABLED = true;
 let AI_CHAT_ENABLED = false;
 
-const USER_COOLDOWN_MS = 15 * 1000;
+const USER_COOLDOWN_MS = 5 * 1000;
 const userCooldown = new Map();
 
 let BINANCE_SYMBOL_CACHE = [];
