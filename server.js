@@ -789,7 +789,11 @@ function analyzeTimeframe(candles, label) {
   const ema34 = ema(closes, 34);
   const ema89 = ema(closes, 89);
   const ema200 = ema(closes, 200);
-  const ema610 = ema(closes, 610);
+  // Vàng không dùng EMA610
+  const ema610 =
+    symbol === "XAUUSD"
+      ? null
+      : ema(closes, 610);
   const rsi14 = rsi(closes, 14);
   const macdData = macd(closes);
   const atr14 = atr(candles, 14);
@@ -827,25 +831,52 @@ function pctDiff(a, b) {
 function getEmaStructure(f) {
   const { price, ema34, ema89, ema200, ema610 } = f;
 
-  if (!ema34 || !ema89 || !ema200 || !ema610) return "UNKNOWN";
-
-  if (price > ema34 && ema34 > ema89 && ema89 > ema200 && ema200 > ema610) {
-    return "SUPER_BULL";
+  if (!ema34 || !ema89 || !ema200) {
+    return "UNKNOWN";
   }
 
-  if (price > ema34 && ema34 > ema89 && price > ema200) {
+  // Coin có EMA610
+  if (ema610) {
+    if (
+      price > ema34 &&
+      ema34 > ema89 &&
+      ema89 > ema200 &&
+      ema200 > ema610
+    ) {
+      return "SUPER_BULL";
+    }
+
+    if (
+      price < ema34 &&
+      ema34 < ema89 &&
+      ema89 < ema200 &&
+      ema200 < ema610
+    ) {
+      return "SUPER_BEAR";
+    }
+  }
+
+  // Dùng cho cả coin và vàng
+  if (
+    price > ema34 &&
+    ema34 > ema89 &&
+    price > ema200
+  ) {
     return "BULL";
   }
 
-  if (price < ema34 && ema34 < ema89 && ema89 < ema200 && ema200 < ema610) {
-    return "SUPER_BEAR";
-  }
-
-  if (price < ema34 && ema34 < ema89 && price < ema200) {
+  if (
+    price < ema34 &&
+    ema34 < ema89 &&
+    price < ema200
+  ) {
     return "BEAR";
   }
 
-  if ((price > ema89 && price < ema200) || (price < ema89 && price > ema200)) {
+  if (
+    (price > ema89 && price < ema200) ||
+    (price < ema89 && price > ema200)
+  ) {
     return "MIXED_BETWEEN_EMA89_200";
   }
 
@@ -894,8 +925,13 @@ function scoreSignal(primary, trend, fundingRate, oiChangePct1h) {
   if (primary.price > primary.ema200) longScore += 0.8;
   if (primary.price < primary.ema200) shortScore += 0.8;
 
-  if (primary.price > primary.ema610) longScore += 0.7;
-  if (primary.price < primary.ema610) shortScore += 0.7;
+  if (primary.ema610) {
+  if (primary.price > primary.ema610)
+    longScore += 0.7;
+
+  if (primary.price < primary.ema610)
+    shortScore += 0.7;
+}
 
   if (primary.rsi14 >= 52 && primary.rsi14 <= 72) longScore += 0.8;
   if (primary.rsi14 <= 48 && primary.rsi14 >= 28) shortScore += 0.8;
@@ -1118,8 +1154,12 @@ async function getMarketContext(symbol, mode = "DEFAULT") {
     openInterest,
     oiChangePct1h: oiStats?.oiChangePct1h ?? null,
     frames: candleResults.map((item) =>
-      analyzeTimeframe(item.candles, item.label)
-    ),
+  analyzeTimeframe(
+    item.candles,
+    item.label,
+    symbol
+  )
+),
   };
 
   return {
