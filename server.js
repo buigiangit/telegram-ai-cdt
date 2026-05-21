@@ -782,7 +782,7 @@ function detectWave(candles) {
   return "RANGE";
 }
 
-function analyzeTimeframe(candles, label) {
+function analyzeTimeframe(candles, label, symbol = null) {
   const closes = candles.map((c) => c.close);
   const last = candles[candles.length - 1];
 
