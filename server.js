@@ -539,14 +539,31 @@ async function detectSymbol(text, memory = null) {
 
 async function getBinanceKlines(symbol, interval = "1h", limit = 650) {
   const url =
-  `https://fapi.binance.com/fapi/v1/klines` +
-  `?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    `https://fapi.binance.com/fapi/v1/klines` +
+    `?symbol=${symbol}&interval=${interval}&limit=${limit}`;
 
   const res = await fetch(url);
-  const data = await res.json();
+  const text = await res.text();
 
-  if (!Array.isArray(data)) {
-    throw new Error(`Không lấy được dữ liệu ${symbol}`);
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error("BINANCE_FUTURES_KLINE_RAW_ERROR:", text);
+    throw new Error(`Binance Futures trả dữ liệu không phải JSON cho ${symbol}`);
+  }
+
+  if (!res.ok || !Array.isArray(data)) {
+    console.error("BINANCE_FUTURES_KLINE_ERROR:", {
+      status: res.status,
+      statusText: res.statusText,
+      url,
+      data,
+    });
+
+    throw new Error(
+      `Không lấy được dữ liệu Futures ${symbol}: ${data?.msg || res.statusText || "Unknown error"}`
+    );
   }
 
   return data.map((k) => ({
