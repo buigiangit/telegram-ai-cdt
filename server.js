@@ -370,7 +370,7 @@ function isAdmin(ctx) {
 // ================= SYMBOL =================
 
 async function getBinanceSymbols() {
-  const res = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+  const res = await fetch("https://fapi.binance.com/fapi/v1/exchangeInfo");
   const data = await res.json();
 
   if (!data || !Array.isArray(data.symbols)) {
@@ -539,8 +539,8 @@ async function detectSymbol(text, memory = null) {
 
 async function getBinanceKlines(symbol, interval = "1h", limit = 650) {
   const url =
-    `https://api.binance.com/api/v3/klines` +
-    `?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  `https://fapi.binance.com/fapi/v1/klines` +
+  `?symbol=${symbol}&interval=${interval}&limit=${limit}`;
 
   const res = await fetch(url);
   const data = await res.json();
