@@ -39,8 +39,8 @@ let AI_CHAT_ENABLED = false;
 const USER_COOLDOWN_MS = 5 * 1000;
 const userCooldown = new Map();
 
-let BINANCE_SYMBOL_CACHE = [];
-let BINANCE_SYMBOL_CACHE_TIME = 0;
+let BINGX_SYMBOL_CACHE = [];
+let BINGX_SYMBOL_CACHE_TIME = 0;
 
 // ================= PROMPT =================
 
@@ -67,6 +67,12 @@ Phong cách CDT:
 - Có thể gọi tên người hỏi nếu memory có tên.
 - Nếu user hỏi tiếp kèo cũ, hiểu là đang nói tiếp ngữ cảnh trước.
 
+Xưng hô:
+- Nếu memory ghi giới tính Nam thì gọi user là "anh".
+- Nếu memory ghi giới tính Nữ thì gọi user là "chị".
+- Nếu chưa rõ giới tính thì tự phân tích theo tên/ngữ cảnh.
+- Nếu không chắc thì dùng "anh/chị", "anh em" hoặc gọi tên, không đoán quá chắc.
+
 Hệ phân tích chính:
 - EMA34, EMA89, EMA200, EMA610.
 - Sonic R: Dragon EMA34, trend EMA89, trend lớn EMA200/EMA610.
@@ -77,7 +83,7 @@ Hệ phân tích chính:
 Cách viết nhận định:
 - Viết như thư ký trader đang nhắn trong group.
 - Câu chữ nhẹ nhàng nhưng không yếu, không mơ hồ.
-- Phải xem người hỏi là nam hay nữ để xưng hô cho chính xác
+- Phải xem người hỏi là nam hay nữ để xưng hô cho chính xác.
 - Có thể dùng cụm tự nhiên như:
   "em thấy bias đang nghiêng Long",
   "mình chưa nên đuổi giá",
@@ -124,13 +130,19 @@ Tính cách:
 - Nói chuyện tự nhiên, nhẹ nhàng, nữ tính, gần gũi.
 - Có thể xưng "em" khi phù hợp.
 - Gọi tên người dùng nếu biết tên.
-- Lưu ý xem họ là nam hay nữ để xưng hô cho đúng
+- Lưu ý xem họ là nam hay nữ để xưng hô cho đúng.
 - Nhớ ngữ cảnh gần nhất, trả lời như đang nói tiếp câu chuyện.
 - Không nói kiểu "là một AI".
 - Không trả lời dài nếu không cần.
 - Nếu câu hỏi mơ hồ, hỏi lại ngắn gọn.
 - Nếu user hỏi về lệnh cũ, dựa vào memory để trả lời tiếp.
 - Nếu user hỏi ngoài trading, trả lời như thư ký cộng đồng.
+
+Xưng hô:
+- Nếu memory ghi giới tính Nam thì gọi user là "anh".
+- Nếu memory ghi giới tính Nữ thì gọi user là "chị".
+- Nếu chưa rõ giới tính thì tự phân tích theo tên/ngữ cảnh.
+- Nếu không chắc thì dùng "anh/chị", "anh em" hoặc gọi tên, không đoán quá chắc.
 
 Giới hạn:
 - Không bịa dữ liệu market nếu không có dữ liệu.
@@ -146,6 +158,59 @@ Phong cách:
 
 // ================= DATABASE MEMORY =================
 
+function normalizeGender(value) {
+  const v = String(value || "").trim().toUpperCase();
+
+  if (["MALE", "NAM", "ANH", "M"].includes(v)) return "MALE";
+  if (["FEMALE", "NU", "NỮ", "CHI", "CHỊ", "F"].includes(v)) return "FEMALE";
+
+  return "UNKNOWN";
+}
+
+function genderText(gender) {
+  const g = normalizeGender(gender);
+
+  if (g === "MALE") return "Nam";
+  if (g === "FEMALE") return "Nữ";
+
+  return "Chưa rõ";
+}
+
+function salutationFromGender(gender) {
+  const g = normalizeGender(gender);
+
+  if (g === "MALE") return "anh";
+  if (g === "FEMALE") return "chị";
+
+  return "AI_TU_PHAN_TICH";
+}
+
+function inferSalutationHint(memory) {
+  const gender = normalizeGender(memory?.gender);
+
+  if (gender === "MALE") return "anh";
+  if (gender === "FEMALE") return "chị";
+
+  const name = String(memory?.first_name || memory?.username || "").toLowerCase();
+
+  const femaleHints = [
+    "nhi", "trang", "thảo", "thao", "linh", "hương", "huong",
+    "ngọc", "ngoc", "vy", "my", "mai", "hà", "ha", "uyên", "uyen",
+    "như", "nhu", "quỳnh", "quynh", "lan", "chi"
+  ];
+
+  const maleHints = [
+    "anh", "tuấn", "tuan", "hùng", "hung", "dũng", "dung",
+    "hoàng", "hoang", "nam", "minh", "đức", "duc", "khoa",
+    "phúc", "phuc", "quân", "quan", "thành", "thanh"
+  ];
+
+  if (femaleHints.some((x) => name.includes(x))) return "chị";
+  if (maleHints.some((x) => name.includes(x))) return "anh";
+
+  return "anh/chị";
+}
+
 async function initDatabase() {
   if (!db || !MEMORY_ENABLED) {
     console.log("PostgreSQL memory disabled");
@@ -159,6 +224,7 @@ async function initDatabase() {
       user_id TEXT NOT NULL,
       username TEXT,
       first_name TEXT,
+      gender TEXT DEFAULT 'UNKNOWN',
       preferred_mode TEXT DEFAULT 'DEFAULT',
       last_symbol TEXT,
       messages JSONB DEFAULT '[]',
@@ -166,6 +232,11 @@ async function initDatabase() {
       updated_at TIMESTAMP DEFAULT NOW(),
       UNIQUE(chat_id, user_id)
     );
+  `);
+
+  await db.query(`
+    ALTER TABLE chat_memory
+    ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT 'UNKNOWN';
   `);
 
   console.log("PostgreSQL memory ready ✅");
@@ -220,13 +291,14 @@ async function saveUserMemory(ctx, userText, botAnswer, symbol, mode) {
     `
     INSERT INTO chat_memory (
       chat_id, user_id, username, first_name,
-      preferred_mode, last_symbol, messages, updated_at
+      gender, preferred_mode, last_symbol, messages, updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
     ON CONFLICT (chat_id, user_id)
     DO UPDATE SET
       username = EXCLUDED.username,
       first_name = EXCLUDED.first_name,
+      gender = COALESCE(chat_memory.gender, EXCLUDED.gender, 'UNKNOWN'),
       preferred_mode = EXCLUDED.preferred_mode,
       last_symbol = COALESCE(EXCLUDED.last_symbol, chat_memory.last_symbol),
       messages = EXCLUDED.messages,
@@ -237,6 +309,7 @@ async function saveUserMemory(ctx, userText, botAnswer, symbol, mode) {
       userId,
       username,
       firstName,
+      oldMemory?.gender || "UNKNOWN",
       mode || oldMemory?.preferred_mode || "DEFAULT",
       symbol || oldMemory?.last_symbol || null,
       JSON.stringify(newMessages),
@@ -258,11 +331,55 @@ async function forgetUserMemory(ctx) {
   return true;
 }
 
+async function setUserGender(ctx, gender) {
+  if (!db || !MEMORY_ENABLED) return false;
+
+  const chatId = String(ctx.chat?.id || "");
+  const userId = String(ctx.from?.id || "");
+  const username = ctx.from?.username || null;
+  const firstName = ctx.from?.first_name || null;
+  const nextGender = normalizeGender(gender);
+
+  if (!chatId || !userId) return false;
+
+  await db.query(
+    `
+    INSERT INTO chat_memory (
+      chat_id, user_id, username, first_name,
+      gender, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, NOW())
+    ON CONFLICT (chat_id, user_id)
+    DO UPDATE SET
+      username = EXCLUDED.username,
+      first_name = EXCLUDED.first_name,
+      gender = EXCLUDED.gender,
+      updated_at = NOW()
+    `,
+    [chatId, userId, username, firstName, nextGender]
+  );
+
+  return true;
+}
+
 function memoryText(memory) {
-  if (!memory) return "MEMORY USER: Không có.";
+  if (!memory) {
+    return `
+MEMORY USER:
+Không có.
+
+Cách xưng hô:
+- Chưa có dữ liệu giới tính.
+- AI tự phân tích theo tên/ngữ cảnh.
+- Nếu không chắc, dùng "anh/chị" hoặc gọi tên, không đoán quá chắc.
+`;
+  }
 
   const name = memory.first_name || memory.username || "anh em";
   const messages = Array.isArray(memory.messages) ? memory.messages : [];
+  const gender = normalizeGender(memory.gender);
+  const salutation = salutationFromGender(gender);
+  const salutationHint = inferSalutationHint(memory);
 
   const recent = messages
     .slice(-6)
@@ -272,6 +389,12 @@ function memoryText(memory) {
   return `
 MEMORY USER:
 Tên nên gọi: ${name}
+Giới tính trong database: ${genderText(gender)}
+Cách xưng hô bắt buộc nếu đã rõ: ${
+    salutation === "anh" || salutation === "chị" ? salutation : "Chưa rõ"
+  }
+Gợi ý xưng hô nếu chưa rõ: ${salutationHint}
+
 Mode hay dùng: ${memory.preferred_mode || "DEFAULT"}
 Coin gần nhất: ${memory.last_symbol || "N/A"}
 
@@ -279,9 +402,11 @@ Ngữ cảnh gần đây:
 ${recent || "Chưa có"}
 
 Cách dùng memory:
+- Nếu giới tính là Nam thì gọi user là "anh".
+- Nếu giới tính là Nữ thì gọi user là "chị".
+- Nếu giới tính chưa rõ, AI tự phân tích theo tên/ngữ cảnh; nếu không chắc thì dùng "anh/chị", "anh em" hoặc gọi tên.
 - Nếu user hỏi "coin này", "con này", "nó", "tiếp đi", hãy hiểu là đang nói tới coin gần nhất nếu hợp lý.
 - Nếu user từng thích scalp/swing, ưu tiên mode đó khi câu hỏi không ghi rõ.
-- Có thể gọi tên người dùng tự nhiên, nhưng không lạm dụng, nhớ lưu ý xem họ là nam hay nữ để xưng hô cho đúng
 - Không được nói lộ rằng đang đọc memory.
 `;
 }
@@ -367,34 +492,171 @@ function isAdmin(ctx) {
   return adminIds.includes(String(ctx.from?.id));
 }
 
-// ================= SYMBOL =================
+// ================= BINGX SYMBOL + MARKET DATA =================
 
-async function getBinanceSymbols() {
-  const res = await fetch("https://fapi.binance.com/fapi/v1/exchangeInfo");
-  const data = await res.json();
+const BINGX_BASE_URL = "https://open-api.bingx.com";
 
-  if (!data || !Array.isArray(data.symbols)) {
-    throw new Error("Không lấy được danh sách Binance");
+function toBingXSymbol(symbol) {
+  const s = String(symbol || "").trim().toUpperCase();
+
+  if (!s) return "";
+  if (s === "XAUUSD") return "XAUUSD";
+  if (s === "USOIL") return "USOIL";
+  if (s.includes("-")) return s;
+
+  if (s.endsWith("USDT")) {
+    return `${s.slice(0, -4)}-USDT`;
   }
 
-  return data.symbols
-    .filter((s) => s.status === "TRADING")
-    .map((s) => s.symbol);
+  return s;
 }
 
-async function getCachedBinanceSymbols() {
+function fromBingXSymbol(symbol) {
+  return String(symbol || "").trim().toUpperCase().replace(/-/g, "");
+}
+
+function isBingXSuccess(data) {
+  return data && (data.code === 0 || data.code === "0" || data.code === undefined);
+}
+
+function normalizeBingXInterval(interval) {
+  const map = {
+    "1m": "1m",
+    "3m": "3m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1h": "1h",
+    "2h": "2h",
+    "4h": "4h",
+    "6h": "6h",
+    "8h": "8h",
+    "12h": "12h",
+    "1d": "1d",
+    "1w": "1w",
+    "1M": "1M",
+  };
+
+  return map[interval] || interval;
+}
+
+async function fetchBingXPublic(path, params = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== "") {
+      query.append(key, String(value));
+    }
+  });
+
+  const url = `${BINGX_BASE_URL}${path}${query.toString() ? `?${query.toString()}` : ""}`;
+
+  const res = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "CDT-AI-Market-Bot/1.0",
+    },
+  });
+
+  const text = await res.text();
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    console.error("BINGX_JSON_ERROR:", {
+      status: res.status,
+      statusText: res.statusText,
+      url,
+      raw: text.slice(0, 500),
+    });
+
+    throw new Error("BingX trả dữ liệu không phải JSON");
+  }
+
+  if (!res.ok || !isBingXSuccess(data)) {
+    console.error("BINGX_API_ERROR:", {
+      status: res.status,
+      statusText: res.statusText,
+      url,
+      data,
+    });
+
+    throw new Error(data?.msg || data?.message || res.statusText || "BingX API error");
+  }
+
+  return data;
+}
+
+async function getBingXSymbols() {
+  const data = await fetchBingXPublic("/openApi/swap/v2/quote/contracts");
+  const contracts = Array.isArray(data.data) ? data.data : [];
+
+  if (!contracts.length) {
+    console.error("BINGX_SYMBOL_EMPTY:", data);
+    throw new Error("Không lấy được danh sách BingX Futures");
+  }
+
+  return contracts
+    .filter((s) => {
+      const symbol = String(s.symbol || "").toUpperCase();
+      const status = String(s.status ?? s.state ?? s.contractStatus ?? "").toUpperCase();
+
+      if (!symbol.endsWith("-USDT")) return false;
+
+      if (!status) return true;
+
+      return ["TRADING", "1", "ONLINE", "NORMAL", "AVAILABLE"].includes(status);
+    })
+    .map((s) => fromBingXSymbol(s.symbol));
+}
+
+async function getCachedBingXSymbols() {
   const now = Date.now();
 
   if (
-    BINANCE_SYMBOL_CACHE.length > 0 &&
-    now - BINANCE_SYMBOL_CACHE_TIME < 6 * 60 * 60 * 1000
+    BINGX_SYMBOL_CACHE.length > 0 &&
+    now - BINGX_SYMBOL_CACHE_TIME < 6 * 60 * 60 * 1000
   ) {
-    return BINANCE_SYMBOL_CACHE;
+    return BINGX_SYMBOL_CACHE;
   }
 
-  BINANCE_SYMBOL_CACHE = await getBinanceSymbols();
-  BINANCE_SYMBOL_CACHE_TIME = now;
-  return BINANCE_SYMBOL_CACHE;
+  try {
+    BINGX_SYMBOL_CACHE = await getBingXSymbols();
+    BINGX_SYMBOL_CACHE_TIME = now;
+
+    console.log(`BINGX_SYMBOL_CACHE_READY: ${BINGX_SYMBOL_CACHE.length} symbols`);
+
+    return BINGX_SYMBOL_CACHE;
+  } catch (error) {
+    console.error("BINGX_SYMBOL_CACHE_ERROR:", error.message);
+
+    BINGX_SYMBOL_CACHE = [
+      "BTCUSDT",
+      "ETHUSDT",
+      "BNBUSDT",
+      "SOLUSDT",
+      "XRPUSDT",
+      "DOGEUSDT",
+      "ADAUSDT",
+      "AVAXUSDT",
+      "LINKUSDT",
+      "TONUSDT",
+      "SUIUSDT",
+      "PEPEUSDT",
+      "WIFUSDT",
+      "ENAUSDT",
+      "ORDIUSDT",
+      "ARBUSDT",
+      "OPUSDT",
+      "APTUSDT",
+      "NEARUSDT",
+      "INJUSDT",
+    ];
+
+    BINGX_SYMBOL_CACHE_TIME = now;
+    return BINGX_SYMBOL_CACHE;
+  }
 }
 
 async function getXauKlines(interval = "1h", limit = 650) {
@@ -460,7 +722,6 @@ async function getXauKlines(interval = "1h", limit = 650) {
 
   let candles = rawCandles;
 
-  // Yahoo không có nến 4H trực tiếp, gom 4 nến 1H thành 1 nến 4H.
   if (interval === "4h") {
     candles = [];
 
@@ -499,12 +760,12 @@ async function detectSymbol(text, memory = null) {
     }
   }
 
-  const binanceSymbols = await getCachedBinanceSymbols();
+  const bingxSymbols = await getCachedBingXSymbols();
 
-  const fullPairMatch = upper.match(/\b([A-Z0-9]{2,20}USDT)\b/);
+  const fullPairMatch = upper.match(/\b([A-Z0-9]{2,20}[-]?USDT)\b/);
   if (fullPairMatch) {
-    const pair = fullPairMatch[1];
-    if (binanceSymbols.includes(pair)) return pair;
+    const pair = fromBingXSymbol(fullPairMatch[1]);
+    if (bingxSymbols.includes(pair)) return pair;
   }
 
   const words = upper.match(/\b[A-Z0-9]{2,15}\b/g) || [];
@@ -522,7 +783,7 @@ async function detectSymbol(text, memory = null) {
     if (ignoreWords.includes(word)) continue;
 
     const pair = `${word}USDT`;
-    if (binanceSymbols.includes(pair)) return pair;
+    if (bingxSymbols.includes(pair)) return pair;
   }
 
   if (
@@ -535,106 +796,125 @@ async function detectSymbol(text, memory = null) {
   return null;
 }
 
-// ================= MARKET DATA =================
-
-async function getBinanceKlines(symbol, interval = "1h", limit = 650) {
-  const url =
-    `https://fapi.binance.com/fapi/v1/klines` +
-    `?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-
-  const res = await fetch(url);
-  const text = await res.text();
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    console.error("BINANCE_FUTURES_KLINE_RAW_ERROR:", text);
-    throw new Error(`Binance Futures trả dữ liệu không phải JSON cho ${symbol}`);
+function normalizeBingXCandle(k) {
+  if (Array.isArray(k)) {
+    return {
+      openTime: Number(k[0]),
+      open: Number(k[1]),
+      high: Number(k[2]),
+      low: Number(k[3]),
+      close: Number(k[4]),
+      volume: Number(k[5] || 0),
+    };
   }
 
-  if (!res.ok || !Array.isArray(data)) {
-    console.error("BINANCE_FUTURES_KLINE_ERROR:", {
-      status: res.status,
-      statusText: res.statusText,
-      url,
+  return {
+    openTime: Number(k.time ?? k.openTime ?? k.t ?? 0),
+    open: Number(k.open ?? k.o),
+    high: Number(k.high ?? k.h),
+    low: Number(k.low ?? k.l),
+    close: Number(k.close ?? k.c),
+    volume: Number(k.volume ?? k.vol ?? k.v ?? 0),
+  };
+}
+
+async function getBingXKlines(symbol, interval = "1h", limit = 650) {
+  const bingxSymbol = toBingXSymbol(symbol);
+  const bingxInterval = normalizeBingXInterval(interval);
+
+  const data = await fetchBingXPublic("/openApi/swap/v3/quote/klines", {
+    symbol: bingxSymbol,
+    interval: bingxInterval,
+    limit,
+  });
+
+  const raw = Array.isArray(data.data) ? data.data : [];
+
+  if (!raw.length) {
+    console.error("BINGX_KLINE_EMPTY:", {
+      symbol: bingxSymbol,
+      interval: bingxInterval,
       data,
     });
 
-    throw new Error(
-      `Không lấy được dữ liệu Futures ${symbol}: ${data?.msg || res.statusText || "Unknown error"}`
-    );
+    throw new Error(`Không lấy được dữ liệu BingX ${bingxSymbol}`);
   }
 
-  return data.map((k) => ({
-    openTime: k[0],
-    open: Number(k[1]),
-    high: Number(k[2]),
-    low: Number(k[3]),
-    close: Number(k[4]),
-    volume: Number(k[5]),
-  }));
+  const candles = raw
+    .map(normalizeBingXCandle)
+    .filter((c) =>
+      Number.isFinite(c.openTime) &&
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
+      Number.isFinite(c.close)
+    )
+    .sort((a, b) => a.openTime - b.openTime)
+    .slice(-limit);
+
+  if (!candles.length) {
+    console.error("BINGX_KLINE_PARSE_EMPTY:", {
+      symbol: bingxSymbol,
+      interval: bingxInterval,
+      raw: raw.slice(0, 3),
+    });
+
+    throw new Error(`Không parse được dữ liệu BingX ${bingxSymbol}`);
+  }
+
+  console.log(`KLINE_SOURCE BINGX ${bingxSymbol} ${bingxInterval}: ${candles.length}`);
+  return candles;
 }
 
 async function getFundingRate(symbol) {
   try {
-    const url =
-      `https://fapi.binance.com/fapi/v1/fundingRate` +
-      `?symbol=${symbol}&limit=1`;
+    const bingxSymbol = toBingXSymbol(symbol);
 
-    const res = await fetch(url);
-    const data = await res.json();
+    const data = await fetchBingXPublic("/openApi/swap/v2/quote/premiumIndex", {
+      symbol: bingxSymbol,
+    });
 
-    if (!Array.isArray(data) || !data.length) return null;
-    return Number(data[0].fundingRate);
+    const row = Array.isArray(data.data) ? data.data[0] : data.data;
+    const value = row?.lastFundingRate ?? row?.fundingRate ?? row?.last_funding_rate;
+
+    if (value === undefined || value === null) return null;
+
+    return Number(value);
   } catch (error) {
-    console.error("FUNDING_ERROR:", error);
+    console.error("BINGX_FUNDING_ERROR:", error.message);
     return null;
   }
 }
 
 async function getOpenInterest(symbol) {
   try {
-    const url =
-      `https://fapi.binance.com/fapi/v1/openInterest` +
-      `?symbol=${symbol}`;
+    const bingxSymbol = toBingXSymbol(symbol);
 
-    const res = await fetch(url);
-    const data = await res.json();
+    const data = await fetchBingXPublic("/openApi/swap/v2/quote/openInterest", {
+      symbol: bingxSymbol,
+    });
 
-    if (!data || data.openInterest === undefined) return null;
-    return Number(data.openInterest);
+    const row = Array.isArray(data.data) ? data.data[0] : data.data;
+    const value = row?.openInterest ?? row?.open_interest;
+
+    if (value === undefined || value === null) return null;
+
+    return Number(value);
   } catch (error) {
-    console.error("OI_ERROR:", error);
+    console.error("BINGX_OI_ERROR:", error.message);
     return null;
   }
 }
 
 async function getOpenInterestStats(symbol) {
   try {
-    const url =
-      `https://fapi.binance.com/futures/data/openInterestHist` +
-      `?symbol=${symbol}&period=1h&limit=2`;
+    const bingxSymbol = toBingXSymbol(symbol);
 
-    const res = await fetch(url);
-    const data = await res.json();
+    console.log(`BINGX_OI_CHANGE_1H_SKIPPED: ${bingxSymbol}`);
 
-    if (!Array.isArray(data) || data.length < 2) {
-      return { oiChangePct1h: null };
-    }
-
-    const prev = Number(data[0].sumOpenInterest);
-    const now = Number(data[1].sumOpenInterest);
-
-    if (!prev || !now) {
-      return { oiChangePct1h: null };
-    }
-
-    return {
-      oiChangePct1h: ((now - prev) / prev) * 100,
-    };
+    return { oiChangePct1h: null };
   } catch (error) {
-    console.error("OI_HIST_ERROR:", error);
+    console.error("BINGX_OI_HIST_ERROR:", error.message);
     return { oiChangePct1h: null };
   }
 }
@@ -806,7 +1086,6 @@ function analyzeTimeframe(candles, label, symbol = null) {
   const ema34 = ema(closes, 34);
   const ema89 = ema(closes, 89);
   const ema200 = ema(closes, 200);
-  // Vàng không dùng EMA610
   const ema610 =
     symbol === "XAUUSD"
       ? null
@@ -852,7 +1131,6 @@ function getEmaStructure(f) {
     return "UNKNOWN";
   }
 
-  // Coin có EMA610
   if (ema610) {
     if (
       price > ema34 &&
@@ -873,7 +1151,6 @@ function getEmaStructure(f) {
     }
   }
 
-  // Dùng cho cả coin và vàng
   if (
     price > ema34 &&
     ema34 > ema89 &&
@@ -943,12 +1220,9 @@ function scoreSignal(primary, trend, fundingRate, oiChangePct1h) {
   if (primary.price < primary.ema200) shortScore += 0.8;
 
   if (primary.ema610) {
-  if (primary.price > primary.ema610)
-    longScore += 0.7;
-
-  if (primary.price < primary.ema610)
-    shortScore += 0.7;
-}
+    if (primary.price > primary.ema610) longScore += 0.7;
+    if (primary.price < primary.ema610) shortScore += 0.7;
+  }
 
   if (primary.rsi14 >= 52 && primary.rsi14 <= 72) longScore += 0.8;
   if (primary.rsi14 <= 48 && primary.rsi14 >= 28) shortScore += 0.8;
@@ -1152,7 +1426,7 @@ async function getMarketContext(symbol, mode = "DEFAULT") {
       ...modeConfig.intervals.map((item) =>
         (isXau
           ? getXauKlines(item.interval, 650)
-          : getBinanceKlines(symbol, item.interval, 650)
+          : getBingXKlines(symbol, item.interval, 650)
         ).then((candles) => ({
           label: item.label,
           candles,
@@ -1166,17 +1440,17 @@ async function getMarketContext(symbol, mode = "DEFAULT") {
     modeRule: modeConfig.rule,
     note: isXau
       ? "XAU/USD lấy dữ liệu OHLC từ Yahoo Finance GC=F, không có Funding/OI."
-      : "",
+      : "Dữ liệu coin lấy từ BingX USDT Perpetual Futures.",
     fundingRate,
     openInterest,
     oiChangePct1h: oiStats?.oiChangePct1h ?? null,
     frames: candleResults.map((item) =>
-  analyzeTimeframe(
-    item.candles,
-    item.label,
-    symbol
-  )
-),
+      analyzeTimeframe(
+        item.candles,
+        item.label,
+        symbol
+      )
+    ),
   };
 
   return {
@@ -1428,6 +1702,45 @@ bot.command("forgetme", async (ctx) => {
   await ctx.reply("Đã xoá memory của bạn trong group này ✅");
 });
 
+bot.command("gender", async (ctx) => {
+  if (!isAllowedGroup(ctx)) return;
+
+  if (!MEMORY_ENABLED || !db) {
+    return ctx.reply("Memory/database chưa bật nên chưa lưu giới tính được.");
+  }
+
+  const raw = ctx.message.text || "";
+  const args = raw.split(" ").slice(1).join(" ").trim().toLowerCase();
+
+  if (!args) {
+    const memory = await getUserMemory(ctx);
+    const currentGender = genderText(memory?.gender || "UNKNOWN");
+
+    return ctx.reply(
+      `Giới tính hiện tại: ${currentGender}\n\n` +
+      `Dùng:\n` +
+      `/gender nam\n` +
+      `/gender nữ\n` +
+      `/gender unknown`
+    );
+  }
+
+  let gender = "UNKNOWN";
+
+  if (["nam", "male", "anh"].includes(args)) gender = "MALE";
+  else if (["nữ", "nu", "female", "chị", "chi"].includes(args)) gender = "FEMALE";
+  else if (["unknown", "xoa", "xoá", "clear", "reset"].includes(args)) gender = "UNKNOWN";
+  else {
+    return ctx.reply("Sai cú pháp. Dùng: /gender nam hoặc /gender nữ hoặc /gender unknown");
+  }
+
+  const ok = await setUserGender(ctx, gender);
+  if (!ok) return ctx.reply("Không lưu được giới tính.");
+
+  const label = genderText(gender);
+  await ctx.reply(`Đã cập nhật giới tính: ${label} ✅`);
+});
+
 bot.command("status", async (ctx) => {
   if (!isAllowedGroup(ctx)) return;
 
@@ -1440,7 +1753,8 @@ bot.command("status", async (ctx) => {
       `Memory: ${MEMORY_ENABLED && db ? "ON ✅" : "OFF ⛔"}\n` +
       `Model: ${AI_MODEL}\n` +
       `EMA: 34/89/200/610\n` +
-      `Signal Engine: ON ✅`
+      `Signal Engine: ON ✅\n` +
+      `Data source: BingX Futures`
   );
 });
 
@@ -1515,6 +1829,7 @@ app.get("/health", (_req, res) => {
     group_id: GROUP_ID || null,
     ema: "34/89/200/610",
     signal_engine: "ON",
+    data_source: "BingX Futures",
   });
 });
 
@@ -1527,7 +1842,6 @@ app.listen(PORT, () => {
 });
 
 try {
-
   await bot.launch({
     dropPendingUpdates: true,
     allowedUpdates: ["message"],
